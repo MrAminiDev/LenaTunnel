@@ -58,9 +58,9 @@ Lena_menu() {
     echo "|| |     ___ _ __   __ _ 									|"
     echo "|| |    / _ \ '_ \ / _  |									|"
     echo "|| |___|  __/ | | | (_| |									|"
-    echo "|\_____/\___|_| |_|\__,_|	V1.0.5 Beta			            |" 
+    echo "|\_____/\___|_| |_|\__,_|	V1.0.0			            |" 
     echo "+-------------------------------------------------------------------------+"    
-    echo -e "| Telegram Channel : ${MAGENTA}@AminiDev ${NC}| Version : ${GREEN} 1.0.5 Beta ${NC} "
+    echo -e "| Telegram Channel : ${MAGENTA}@AminiDev ${NC}| Version : ${GREEN} 1.0.0 ${NC} "
     echo "+-------------------------------------------------------------------------+"
     echo -e "|${GREEN}Server Country    |${NC} $SERVER_COUNTRY"
     echo -e "|${GREEN}Server IP         |${NC} $SERVER_IP"
@@ -71,7 +71,8 @@ Lena_menu() {
     echo -e "1- Install new tunnel"
     echo -e "2- Uninstall tunnel(s)"
     echo -e "3- Install BBR"
-    echo -e "4- install cronjob"
+    echo -e "4- Cronjob settings"
+    echo -e "0- Exit"
     echo "+-------------------------------------------------------------------------+"
     echo -e "\033[0m"
 }
@@ -179,8 +180,12 @@ EOL
 # ---------------- MAIN ----------------
 while true; do
     Lena_menu
-    read -p "Enter your choice [1-4]: " main_action
+    read -p "Enter your choice [0-4]: " main_action
     case $main_action in
+        0)
+            echo "Exiting..."
+            exit 0
+            ;;
         1)
             break
             ;;
@@ -194,21 +199,80 @@ while true; do
             ;;
         4)
             while true; do
-                read -p "How many hours between each restart? (1-24): " cron_hours
-                if [[ $cron_hours =~ ^[0-9]+$ ]] && (( cron_hours >= 1 && cron_hours <= 24 )); then
-                    break
-                else
-                    echo "Invalid input. Please enter a number between 1 and 24."
-                fi
+                clear
+                echo "+-----------------------------+"
+                echo "|      Cronjob settings       |"
+                echo "+-----------------------------+"
+                echo "1- Install cronjob"
+                echo "2- Edit cronjob"
+                echo "3- Delete cronjob"
+                echo "4- Back to main menu"
+                read -p "Enter your choice [1-4]: " cron_action
+                case $cron_action in
+                    1)
+                        while true; do
+                            read -p "How many hours between each restart? (1-24, b=Back): " cron_hours
+                            if [[ "$cron_hours" == "b" || "$cron_hours" == "B" ]]; then
+                                break
+                            elif [[ $cron_hours =~ ^[0-9]+$ ]] && (( cron_hours >= 1 && cron_hours <= 24 )); then
+                                # Remove any previous cronjobs for these services
+                                crontab -l 2>/dev/null | grep -v 'systemctl restart haproxy' | grep -v 'systemctl restart vxlan-tunnel' > /tmp/cron_tmp || true
+                                echo "0 */$cron_hours * * * systemctl restart haproxy >/dev/null 2>&1" >> /tmp/cron_tmp
+                                echo "0 */$cron_hours * * * systemctl restart vxlan-tunnel >/dev/null 2>&1" >> /tmp/cron_tmp
+                                crontab /tmp/cron_tmp
+                                rm /tmp/cron_tmp
+                                echo -e "${GREEN}Cronjob set successfully to restart haproxy and vxlan-tunnel every $cron_hours hour(s).${NC}"
+                                read -p "Press Enter to return to Cronjob settings..."
+                                break
+                            else
+                                echo "Invalid input. Please enter a number between 1 and 24 or 'b' to go back."
+                            fi
+                        done
+                        ;;
+                    2)
+                        if crontab -l 2>/dev/null | grep -q 'systemctl restart haproxy'; then
+                            while true; do
+                                read -p "Enter new hours for cronjob (1-24, b=Back): " new_cron_hours
+                                if [[ "$new_cron_hours" == "b" || "$new_cron_hours" == "B" ]]; then
+                                    break
+                                elif [[ $new_cron_hours =~ ^[0-9]+$ ]] && (( new_cron_hours >= 1 && new_cron_hours <= 24 )); then
+                                    crontab -l 2>/dev/null | grep -v 'systemctl restart haproxy' | grep -v 'systemctl restart vxlan-tunnel' > /tmp/cron_tmp || true
+                                    echo "0 */$new_cron_hours * * * systemctl restart haproxy >/dev/null 2>&1" >> /tmp/cron_tmp
+                                    echo "0 */$new_cron_hours * * * systemctl restart vxlan-tunnel >/dev/null 2>&1" >> /tmp/cron_tmp
+                                    crontab /tmp/cron_tmp
+                                    rm /tmp/cron_tmp
+                                    echo -e "${GREEN}Cronjob updated successfully to every $new_cron_hours hour(s).${NC}"
+                                    read -p "Press Enter to return to Cronjob settings..."
+                                    break
+                                else
+                                    echo "Invalid input. Please enter a number between 1 and 24 or 'b' to go back."
+                                fi
+                            done
+                        else
+                            echo -e "${YELLOW}No cronjob found to edit. Please install first.${NC}"
+                            read -p "Press Enter to return to Cronjob settings..."
+                        fi
+                        ;;
+                    3)
+                        if crontab -l 2>/dev/null | grep -q 'systemctl restart haproxy'; then
+                            crontab -l 2>/dev/null | grep -v 'systemctl restart haproxy' | grep -v 'systemctl restart vxlan-tunnel' > /tmp/cron_tmp || true
+                            crontab /tmp/cron_tmp
+                            rm /tmp/cron_tmp
+                            echo -e "${GREEN}Cronjob deleted successfully.${NC}"
+                        else
+                            echo -e "${YELLOW}No cronjob found to delete.${NC}"
+                        fi
+                        read -p "Press Enter to return to Cronjob settings..."
+                        ;;
+                    4)
+                        break
+                        ;;
+                    *)
+                        echo "[x] Invalid option. Try again."
+                        sleep 1
+                        ;;
+                esac
             done
-            # Remove any previous cronjobs for these services
-            crontab -l 2>/dev/null | grep -v 'systemctl restart haproxy' | grep -v 'systemctl restart vxlan-tunnel' > /tmp/cron_tmp || true
-            echo "0 */$cron_hours * * * systemctl restart haproxy >/dev/null 2>&1" >> /tmp/cron_tmp
-            echo "0 */$cron_hours * * * systemctl restart vxlan-tunnel >/dev/null 2>&1" >> /tmp/cron_tmp
-            crontab /tmp/cron_tmp
-            rm /tmp/cron_tmp
-            echo -e "${GREEN}Cronjob set successfully to restart haproxy and vxlan-tunnel every $cron_hours hour(s).${NC}"
-            read -p "Press Enter to return to menu..."
             ;;
         *)
             echo "[x] Invalid option. Try again."
