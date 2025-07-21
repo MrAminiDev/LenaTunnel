@@ -1,44 +1,29 @@
 #!/bin/bash
 
-# ---------------- INSTALL DEPENDENCIES ----------------
-echo "[*] Updating package list..."
-sudo apt update -y
-
-echo "[*] Installing iproute2..."
-sudo apt install -y iproute2
-
-echo "[*] Installing net-tools..."
-sudo apt install -y net-tools
-
-echo "[*] Installing grep..."
-sudo apt install -y grep
-
-echo "[*] Installing awk..."
-sudo apt install -y awk
-
-echo "[*] Installing sudo..."
-sudo apt install -y sudo
-
-echo "[*] Installing iputils-ping..."
-sudo apt install -y iputils-ping
-
-echo "[*] Installing jq..."
-sudo apt install -y jq
-
-echo "[*] Installing Curl..."
-sudo apt install -y curl
-
-echo "[*] Installing Haproxy..."
-sudo apt install -y haproxy
-
-echo "[*] Installing Iptables..."
-sudo apt install iptables
-
 # ---------------- COLORS ----------------
 GREEN='\033[0;32m'
 YELLOW='\033[1;33m'
 MAGENTA='\033[0;35m'
 NC='\033[0m'
+
+# ---------------- CHECK ROOT ----------------
+if [[ $EUID -ne 0 ]]; then
+    echo -e "${YELLOW}[!] This script must be run as root.${NC}"
+    echo -e "${YELLOW}[!] Please use 'sudo' or switch to root user.${NC}"
+    exit 1
+fi
+
+# ---------------- INSTALL DEPENDENCIES ----------------
+echo -e "${YELLOW}[*] Updating package list...${NC}"
+apt-get update -y -qq
+
+for pkg in iproute2 net-tools grep awk iputils-ping jq curl iptables; do
+    if ! command -v $pkg &> /dev/null; then
+        echo -e "${YELLOW}[*] Installing $pkg...${NC}"
+        apt-get install -y -qq $pkg
+    fi
+done
+
 
 # ---------------- FUNCTIONS ----------------
 
@@ -58,8 +43,8 @@ Lena_menu() {
     echo "|| |     ___ _ __   __ _ 									|"
     echo "|| |    / _ \ '_ \ / _  |									|"
     echo "|| |___|  __/ | | | (_| |									|"
-    echo "|\_____/\___|_| |_|\__,_|	V1.0.0			            |" 
-    echo "+-------------------------------------------------------------------------+"    
+    echo "|\_____/\___|_| |_|\__,_|	V1.0.0			            |"
+    echo "+-------------------------------------------------------------------------+"
     echo -e "| Telegram Channel : ${MAGENTA}@AminiDev ${NC}| Version : ${GREEN} 1.0.0 ${NC} "
     echo "+-------------------------------------------------------------------------+"
     echo -e "|${GREEN}Server Country    |${NC} $SERVER_COUNTRY"
@@ -82,17 +67,19 @@ uninstall_all_vxlan() {
     for i in $(ip -d link show | grep -o 'vxlan[0-9]\+'); do
         ip link del $i 2>/dev/null
     done
-    rm -f /usr/local/bin/vxlan_bridge.sh /etc/ping_vxlan.sh
-    systemctl disable --now vxlan-tunnel.service 2>/dev/null
-    rm -f /etc/systemd/system/vxlan-tunnel.service
+
+    systemctl stop haproxy vxlan-tunnel 2>/dev/null
+    systemctl disable haproxy vxlan-tunnel 2>/dev/null
+
+    rm -f /usr/local/bin/vxlan_bridge.sh /etc/ping_vxlan.sh /etc/systemd/system/vxlan-tunnel.service
+
     systemctl daemon-reload
-    # Stop and disable HAProxy service
-    systemctl stop haproxy 2>/dev/null
-    systemctl disable haproxy 2>/dev/null
+
     # Remove HAProxy package
-    apt remove -y haproxy 2>/dev/null
-    apt purge -y haproxy 2>/dev/null
+    apt remove -y haproxy -qq
+    apt purge -y haproxy -qq
     apt autoremove -y 2>/dev/null
+
     # Remove related cronjobs
     crontab -l 2>/dev/null | grep -v 'systemctl restart haproxy' | grep -v 'systemctl restart vxlan-tunnel' | grep -v '/etc/ping_vxlan.sh' > /tmp/cron_tmp || true
     crontab /tmp/cron_tmp
@@ -102,9 +89,7 @@ uninstall_all_vxlan() {
 
 install_bbr() {
     echo "Running BBR script..."
-    curl -fsSL https://raw.githubusercontent.com/MrAminiDev/NetOptix/main/scripts/bbr.sh -o /tmp/bbr.sh
-    bash /tmp/bbr.sh
-    rm /tmp/bbr.sh
+    curl -fsSLk https://raw.githubusercontent.com/MrAminiDev/NetOptix/main/scripts/bbr.sh | bash
 }
 
 install_haproxy_and_configure() {
@@ -113,11 +98,11 @@ install_haproxy_and_configure() {
     # Ensure haproxy is installed
     if ! command -v haproxy >/dev/null 2>&1; then
         echo "[x] HAProxy is not installed. Installing..."
-        sudo apt update && sudo apt install -y haproxy
+        apt update -qq && apt install -y haproxy -qq
     fi
 
     # Ensure config directory exists
-    sudo mkdir -p /etc/haproxy
+    mkdir -p /etc/haproxy
 
     # Default HAProxy config file
     local CONFIG_FILE="/etc/haproxy/haproxy.cfg"
@@ -169,8 +154,7 @@ EOL
     # Validate haproxy config
     if haproxy -c -f "$CONFIG_FILE"; then
         echo "[*] Restarting HAProxy service..."
-        systemctl restart haproxy
-        systemctl enable haproxy
+        systemctl enable haproxy && systemctl restart haproxy
         echo -e "${GREEN}HAProxy configured and restarted successfully.${NC}"
     else
         echo -e "${YELLOW}Warning: HAProxy configuration is invalid!${NC}"
